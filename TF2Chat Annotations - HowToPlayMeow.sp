@@ -10,7 +10,7 @@
 #tryinclude <sourcecomms>
 #define REQUIRE_PLUGIN
 
-#define PLUGIN_VERSION "6.5.0"
+#define PLUGIN_VERSION "6.5.1"
 
 public Plugin myinfo = 
 {
@@ -61,9 +61,6 @@ public void OnPluginStart()
     cvAnnMaxLen    = CreateConVar("sm_cvann_maxlen", "64", "Maximum Length of Chat Message shown in Annotations.", FCVAR_NONE, true, 0.0, true, 128.0);
     cvAnnRemove    = CreateConVar("sm_cvann_entity_remove", "1900", "Remove All Annotations if Entity count reaches this.", FCVAR_NONE, true, 0.0, true, 2048.0);
     cvAnnBlock     = CreateConVar("sm_cvann_entity_block", "2000", "Block New Annotations if Entity count reaches this.", FCVAR_NONE, true, 0.0, true, 2048.0);
-
-    AddCommandListener(Chat_Meow, "say");
-    AddCommandListener(Chat_Meow, "say_team");
 
     HookEvent("player_spawn", ReAnnID);
     HookEvent("player_death", ReAnnID);
@@ -185,7 +182,7 @@ bool CatToxic(int client)
     return true;
 }
 
-public Action Chat_Meow(int client, const char[] command, int argc)
+public void OnClientSayCommand_Post(int client, const char[] command, const char[] argc)
 {
     bool enable = cvAnnEnable.BoolValue;
     float range = cvAnnRange.FloatValue;
@@ -194,16 +191,16 @@ public Action Chat_Meow(int client, const char[] command, int argc)
     int maxlen = cvAnnMaxLen.IntValue;
 
     if (!enable || !RealServerCrash())
-        return Plugin_Continue;
+        return;
 
     if (range <= 0.0 || life <= 0.0 || maxlen <= 0)
-        return Plugin_Continue;
+        return;
 
     if (!YouIsCat(client) || !CatToxic(client) || !IsPlayerAlive(client))
-        return Plugin_Continue;
+        return;
 
     char msg[256];
-    GetCmdArgString(msg, sizeof(msg));
+    strcopy(msg, sizeof(msg), argc);
     StripQuotes(msg);
     TrimString(msg);
 
@@ -211,28 +208,26 @@ public Action Chat_Meow(int client, const char[] command, int argc)
     ReplaceString(msg, sizeof(msg), "&", "﹠");
 
     if (msg[0] == '\0')
-        return Plugin_Continue;
+        return;
 
     if (cmd < 3)
     {
         if (cmd == 0 && (msg[0] == '!' || msg[0] == '/'))
-            return Plugin_Continue;
+            return;
 
         if (cmd == 1 && msg[0] == '/')
-            return Plugin_Continue;
+            return;
 
         if (cmd == 2 && msg[0] == '!')
-            return Plugin_Continue;
+            return;
     }
 
     if (strlen(msg) > maxlen)
         msg[maxlen] = '\0';
 
-    bool isTeam = (StrContains(command, "say_team") != -1);
+    bool isTeam = StrEqual(command, "say_team");
 
     MeowMeow(client, isTeam, msg, life);
-
-    return Plugin_Continue;
 }
 
 void MeowMeow(int client, bool isTeam, const char[] msg, float life)
