@@ -10,7 +10,9 @@
 #tryinclude <sourcecomms>
 #define REQUIRE_PLUGIN
 
-#define PLUGIN_VERSION "6.5.1"
+#define PLUGIN_VERSION "6.5.2"
+#define PLUGIN_PREFIX "\x03Chat Annotations\x01"
+#define CMD_TOGGLE_DESC "Toggle Chat Annotations visibility for yourself."
 
 public Plugin myinfo = 
 {
@@ -30,6 +32,7 @@ enum
     annotation_show_cmd,
     annotation_interval,
     annotation_life,
+    annotation_dynamic_life,
     annotation_limit,
     annotation_max_len,
     annotation_remove,
@@ -41,14 +44,14 @@ enum
 ConVar g_ConVars[MAX_CONVARS];
 
 Handle  g_hTimerAnn = null;
-char    g_cLastMsg[MAXPLAYERS+1][256];
-int     g_iAnnID[MAXPLAYERS+1];
-int     g_iAnnIDMeow = 1;
-int     g_iBaseComm = 0;
-int     g_iSourceComms = 0;
+char    g_szLastMsg[MAXPLAYERS+1][256];
+int     g_iAnnPlayerID[MAXPLAYERS+1];
+int     g_iAnnID = 1;
+bool    g_bBaseComm, g_bSourceComms;
 bool    g_bAnnIsTeam[MAXPLAYERS+1];
 bool    g_bViewerSee[MAXPLAYERS+1][MAXPLAYERS+1];
 bool    g_bPlayerMoved[MAXPLAYERS+1];
+bool    g_bAnnEnabled[MAXPLAYERS+1] = {true, ...};
 float   g_flAnnN[MAXPLAYERS+1];
 float   g_flLastPos[MAXPLAYERS+1][3];
 float   g_flLastAng[MAXPLAYERS+1][3];
@@ -58,22 +61,31 @@ public void OnPluginStart()
 {
     CreateConVar("sm_cvann_version", PLUGIN_VERSION, "Version of TF2Chat Annotations.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
     
-    g_ConVars[plugin_enabled]        = CreateConVar("sm_cvann_enable", "1", "TF2Chat Annotations. (1 = Enable, 0 = Disable)", FCVAR_NONE, true, 0.0, true, 1.0);
-    g_ConVars[annotation_range]      = CreateConVar("sm_cvann_range", "25", "Distance to See Annotations.", FCVAR_NONE, true, 0.0);
-    g_ConVars[annotation_show_range] = CreateConVar("sm_cvann_show_range", "0", "Show Distance to speaker in Annotations. (1 = Enable, 0 = Disable)", FCVAR_NONE, true, 0.0, true, 1.0);
-    g_ConVars[annotation_show_msg]   = CreateConVar("sm_cvann_show_msg", "1", "Allow Players to See their own Chat Annotation. (1 = Enable, 0 = Disable)", FCVAR_NONE, true, 0.0, true, 1.0);
-    g_ConVars[annotation_show_cmd]   = CreateConVar("sm_cvann_show_cmd", "1", "Command Visibility. (0 = Hide ! and /, 1 = Show !, 2 = Show /, 3 = Show ! and /)", FCVAR_NONE, true, 0.0, true, 3.0);
-    g_ConVars[annotation_interval]   = CreateConVar("sm_cvann_interval", "0.5", "Update interval for checking Annotation Visibility.", FCVAR_NONE, true, 0.5);
-    g_ConVars[annotation_life]       = CreateConVar("sm_cvann_lifetime", "10.0", "How long Message stays visible (Seconds).", FCVAR_NONE, true, 0.0);
-    g_ConVars[annotation_limit]      = CreateConVar("sm_cvann_limit", "5", "Maximum Number of Annotations shown at same time. (0 = Unlimited)", FCVAR_NONE, true, 0.0);
-    g_ConVars[annotation_max_len]    = CreateConVar("sm_cvann_maxlen", "64", "Maximum Length of Chat Message shown in Annotations.", FCVAR_NONE, true, 0.0, true, 128.0);
-    g_ConVars[annotation_remove]     = CreateConVar("sm_cvann_entity_remove", "1900", "Remove All Annotations if Entity count reaches this.", FCVAR_NONE, true, 0.0, true, 2048.0);
-    g_ConVars[annotation_block]      = CreateConVar("sm_cvann_entity_block", "2000", "Block New Annotations if Entity count reaches this.", FCVAR_NONE, true, 0.0, true, 2048.0);
+    g_ConVars[plugin_enabled]          = CreateConVar("sm_cvann_enable", "1", "TF2Chat Annotations. (1 = Enable, 0 = Disable)", _, true, 0.0, true, 1.0);
+    g_ConVars[annotation_range]        = CreateConVar("sm_cvann_range", "25", "Distance to See Annotations.", _, true, 0.0);
+    g_ConVars[annotation_show_range]   = CreateConVar("sm_cvann_show_range", "0", "Show Distance to speaker in Annotations. (1 = Enable, 0 = Disable)", _, true, 0.0, true, 1.0);
+    g_ConVars[annotation_show_msg]     = CreateConVar("sm_cvann_show_msg", "1", "Allow Players to See their own Chat Annotation. (1 = Enable, 0 = Disable)", _, true, 0.0, true, 1.0);
+    g_ConVars[annotation_show_cmd]     = CreateConVar("sm_cvann_show_cmd", "1", "Command Visibility. (0 = Hide ! and /, 1 = Show !, 2 = Show /, 3 = Show ! and /)", _, true, 0.0, true, 3.0);
+    g_ConVars[annotation_interval]     = CreateConVar("sm_cvann_interval", "0.5", "Update interval for checking Annotation Visibility.", _, true, 0.5);
+    g_ConVars[annotation_life]         = CreateConVar("sm_cvann_lifetime", "10.0", "How long Message stays visible (Seconds). If 'sm_cvann_dynamic_lifetime' is set, it becomes the minimum lifetime.", _, true, 0.0);
+    g_ConVars[annotation_dynamic_life] = CreateConVar("sm_cvann_dynamic_lifetime", "0.0", "Whether the Chat Message should last based on its length. (0.0 = Disable, above 0.0 = Time Factor)", _, true, 0.0);
+    g_ConVars[annotation_limit]        = CreateConVar("sm_cvann_limit", "5", "Maximum Number of Annotations shown at same time. (0 = Unlimited)", _, true, 0.0);
+    g_ConVars[annotation_max_len]      = CreateConVar("sm_cvann_maxlen", "64", "Maximum Length of Chat Message shown in Annotations.", _, true, 0.0, true, 128.0);
+    g_ConVars[annotation_remove]       = CreateConVar("sm_cvann_entity_remove", "1900", "Remove All Annotations if Entity count reaches this.", _, true, 0.0, true, 2048.0);
+    g_ConVars[annotation_block]        = CreateConVar("sm_cvann_entity_block", "2000", "Block New Annotations if Entity count reaches this.", _, true, 0.0, true, 2048.0);
+
+    RegConsoleCmd("sm_annotation", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_annotations", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_annotate", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_ann", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
 
     HookEvent("player_spawn", Event_PlayerSpawn_Death);
     HookEvent("player_death", Event_PlayerSpawn_Death);
 
+    LoadTranslations("common.phrases");
+
     AutoExecConfig(true, "tf_chat_annotations");
+
     StartAnnotation();
 }
 
@@ -90,6 +102,26 @@ public void OnPluginEnd()
 public void OnMapEnd()
 {
     StopAnnotation();
+}
+
+public Action Command_ToggleAnnotations(int client, int args)
+{
+    if (client <= 0 || !IsClientInGame(client))
+    {
+        return Plugin_Handled;
+    }
+
+    g_bAnnEnabled[client] = !g_bAnnEnabled[client];
+    if (g_bAnnEnabled[client])
+    {
+        PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "On");
+    }
+    else
+    {
+        PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "Off");
+        HideAnnotation(client);
+    }
+    return Plugin_Handled;
 }
 
 public void OnClientPutInServer(int client)
@@ -116,8 +148,8 @@ public void TF2_OnConditionAdded(int client, TFCond condition)
 
 void StartAnnotation()
 {
-    g_iBaseComm    = LibraryExists("basecomm") ? 1 : 0;
-    g_iSourceComms = LibraryExists("sourcecomms") ? 1 : 0;
+    g_bBaseComm    = LibraryExists("basecomm");
+    g_bSourceComms = LibraryExists("sourcecomms");
 
     float interval = g_ConVars[annotation_interval].FloatValue;
     if (g_hTimerAnn == null)
@@ -128,8 +160,8 @@ void StopAnnotation()
 {
     RemoveAnnotationAll();
 
-    g_iBaseComm = 0;
-    g_iSourceComms = 0;
+    g_bBaseComm = false;
+    g_bSourceComms = false;
 
     if (g_hTimerAnn != null)
     {
@@ -174,7 +206,7 @@ bool ShowAnnotationPossible(int client)
 bool ShowAnnotationAllowed(int client)
 {
     #if defined _basecomm_included
-    if (g_iBaseComm == 1)
+    if (g_bBaseComm)
     {
         if (BaseComm_IsClientGagged(client))
             return false;
@@ -182,7 +214,7 @@ bool ShowAnnotationAllowed(int client)
     #endif
 
     #if defined _sourcecomms_included
-    if (g_iSourceComms == 1)
+    if (g_bSourceComms)
     {
         int NOPE = view_as<int>(SourceComms_GetClientGagType(client));
         if (NOPE == 1 || NOPE == 3)
@@ -198,13 +230,14 @@ public void OnClientSayCommand_Post(int client, const char[] command, const char
     bool enable = g_ConVars[plugin_enabled].BoolValue;
     float range = g_ConVars[annotation_range].FloatValue;
     float life = g_ConVars[annotation_life].FloatValue;
+    float dynamicLife = g_ConVars[annotation_dynamic_life].FloatValue;
     int cmd = g_ConVars[annotation_show_cmd].IntValue;
     int maxlen = g_ConVars[annotation_max_len].IntValue;
 
     if (!enable || !IsServerCrashImminent())
         return;
 
-    if (range <= 0.0 || life <= 0.0 || maxlen <= 0)
+    if (range <= 0.0 || maxlen <= 0)
         return;
 
     if (!ShowAnnotationPossible(client) || !ShowAnnotationAllowed(client) || !IsPlayerAlive(client))
@@ -237,6 +270,25 @@ public void OnClientSayCommand_Post(int client, const char[] command, const char
     if (strlen(buffer) > maxlen)
         buffer[maxlen] = '\0';
 
+    if (dynamicLife > 0.0)
+    {
+        int len = strlen(buffer);
+        float dynamic = (len * dynamicLife) + dynamicLife;
+        
+        if (dynamic < life)
+            life = life;
+        else
+            life = dynamic;
+
+        if (life <= 0.0)
+            return;
+    }
+    else
+    {
+        if (life <= 0.0)
+            return;
+    }
+
     bool isTeam = StrEqual(command, "say_team");
     DisplayAnnotation(client, isTeam, buffer, life);
 }
@@ -246,10 +298,10 @@ void DisplayAnnotation(int client, bool isTeam, const char[] sArgs, float life)
     HideAnnotation(client);
 
     g_bAnnIsTeam[client] = isTeam;
-    g_iAnnIDMeow = (g_iAnnIDMeow % 0x7FFFFFFF) + 1;
-    g_iAnnID[client] = g_iAnnIDMeow;
+    g_iAnnID = (g_iAnnID % 0x7FFFFFFF) + 1;
+    g_iAnnPlayerID[client] = g_iAnnID;
 
-    strcopy(g_cLastMsg[client], sizeof(g_cLastMsg[]), sArgs);
+    strcopy(g_szLastMsg[client], sizeof(g_szLastMsg[]), sArgs);
     g_flAnnN[client] = GetGameTime() + life;
 }
 
@@ -273,7 +325,7 @@ public Action UpdateAnnotation(Handle timer)
         g_bPlayerMoved[i] = IsClientInMotion(i);
         GetClientEyePosition(i, g_flCachePos[i]);
 
-        if (g_iAnnID[i] != 0)
+        if (g_iAnnPlayerID[i] != 0)
         {
             if (!ShowAnnotationPossible(i) || g_flAnnN[i] <= now)
                 HideAnnotation(i);
@@ -325,6 +377,9 @@ bool IsClientInMotion(int client)
 void YouSeeAnnotation(int viewer, int talker, bool talkerMoved, bool viewerMoved, float rangeSqr, float now)
 {
     if (!IsClientInGame(viewer) || IsFakeClient(viewer))
+        return;
+
+    if (!g_bAnnEnabled[viewer])
         return;
 
     bool seesArgs = g_ConVars[annotation_show_msg].BoolValue;
@@ -393,6 +448,9 @@ public bool TraceRayIgnoreClients(int entity, int mask, any data)
 
 bool MaxAnnotation(int viewer) 
 {
+    if (!g_bAnnEnabled[viewer])
+        return true;
+
     int count = 0;
     int oldestTalker = -1;
     int limit = g_ConVars[annotation_limit].IntValue;
@@ -442,8 +500,8 @@ void ShowAnnotation(int client, int viewer, float life)
     if (event)
     {
         event.SetInt("follow_entindex", client);
-        event.SetInt("id", g_iAnnID[client]);
-        event.SetString("text", g_cLastMsg[client]);
+        event.SetInt("id", g_iAnnPlayerID[client]);
+        event.SetString("text", g_szLastMsg[client]);
         event.SetFloat("lifetime", life);
         event.SetBool("show_distance", show);
         event.FireToClient(viewer);
@@ -452,10 +510,10 @@ void ShowAnnotation(int client, int viewer, float life)
 
 void HideAnnotation(int client)
 {
-    if (g_iAnnID[client] != 0)
+    if (g_iAnnPlayerID[client] != 0)
         HideAnnotationReal(client, 0);
 
-    g_iAnnID[client] = 0;
+    g_iAnnPlayerID[client] = 0;
     g_flAnnN[client] = 0.0;
     g_bAnnIsTeam[client] = false;
 
@@ -469,7 +527,7 @@ void HideAnnotationReal(int client, int viewer)
     if (!event) return;
 
     event.SetInt("follow_entindex", client);
-    event.SetInt("id", g_iAnnID[client]);
+    event.SetInt("id", g_iAnnPlayerID[client]);
 
     if (viewer > 0 && IsClientInGame(viewer))
         event.FireToClient(viewer);
