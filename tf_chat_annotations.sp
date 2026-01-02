@@ -4,6 +4,7 @@
 #include <sourcemod>
 #include <sdktools>
 #include <tf2_stocks>
+#include <clientprefs>
 
 #undef REQUIRE_PLUGIN
 #tryinclude <basecomm>
@@ -44,6 +45,7 @@ enum
 ConVar g_ConVars[MAX_CONVARS];
 
 Handle  g_hTimerAnn = null;
+Handle  g_hAnnCookie;
 char    g_szLastMsg[MAXPLAYERS+1][256];
 int     g_iAnnPlayerID[MAXPLAYERS+1];
 int     g_iAnnID = 1;
@@ -59,6 +61,8 @@ float   g_flCachePos[MAXPLAYERS+1][3];
 
 public void OnPluginStart() 
 {
+    g_hAnnCookie = RegClientCookie("chat_annotations", "toggle visibility", CookieAccess_Public);
+
     CreateConVar("sm_cvann_version", PLUGIN_VERSION, "Version of TF2Chat Annotations.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
     
     g_ConVars[plugin_enabled]          = CreateConVar("sm_cvann_enable", "1", "TF2Chat Annotations. (1 = Enable, 0 = Disable)", _, true, 0.0, true, 1.0);
@@ -74,10 +78,10 @@ public void OnPluginStart()
     g_ConVars[annotation_remove]       = CreateConVar("sm_cvann_entity_remove", "1900", "Remove All Annotations if Entity count reaches this.", _, true, 0.0, true, 2048.0);
     g_ConVars[annotation_block]        = CreateConVar("sm_cvann_entity_block", "2000", "Block New Annotations if Entity count reaches this.", _, true, 0.0, true, 2048.0);
 
-    RegConsoleCmd("sm_annotation", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
-    RegConsoleCmd("sm_annotations", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
-    RegConsoleCmd("sm_annotate", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
-    RegConsoleCmd("sm_ann", Command_ToggleAnnotations, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_annotation", Command_Settings, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_annotations", Command_Settings, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_annotate", Command_Settings, CMD_TOGGLE_DESC);
+    RegConsoleCmd("sm_ann", Command_Settings, CMD_TOGGLE_DESC);
 
     HookEvent("player_spawn", Event_PlayerSpawn_Death);
     HookEvent("player_death", Event_PlayerSpawn_Death);
@@ -87,6 +91,16 @@ public void OnPluginStart()
     AutoExecConfig(true, "tf_chat_annotations");
 
     StartAnnotation();
+}
+
+public void OnClientCookiesCached(int client)
+{
+    char value[8];
+    GetClientCookie(client, g_hAnnCookie, value, sizeof(value));
+    if (value[0] == '\0')
+        g_bAnnEnabled[client] = true; // default
+    else
+        g_bAnnEnabled[client] = (StringToInt(value) == 1);
 }
 
 public void OnMapStart()
@@ -104,14 +118,18 @@ public void OnMapEnd()
     StopAnnotation();
 }
 
-public Action Command_ToggleAnnotations(int client, int args)
+public Action Command_Settings(int client, int args)
 {
     if (client <= 0 || !IsClientInGame(client))
-    {
         return Plugin_Handled;
-    }
 
     g_bAnnEnabled[client] = !g_bAnnEnabled[client];
+
+    // Save Cookie
+    char value[8];
+    IntToString(g_bAnnEnabled[client] ? 1 : 0, value, sizeof(value));
+    SetClientCookie(client, g_hAnnCookie, value);
+
     if (g_bAnnEnabled[client])
     {
         PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "On");
@@ -121,6 +139,7 @@ public Action Command_ToggleAnnotations(int client, int args)
         PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "Off");
         HideAnnotation(client);
     }
+
     return Plugin_Handled;
 }
 
