@@ -1,0 +1,61 @@
+name: Compile with SourceMod
+
+on:
+  push:
+    paths-ignore:
+      - README.md
+      - LICENSE
+      - .gitignore
+  pull_request:
+    paths-ignore:
+      - README.md
+      - LICENSE
+      - .gitignore
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set environment variables
+        run: echo SCRIPTS_PATH=$(pwd) >> $GITHUB_ENV
+
+      - name: Setup SourcePawn Compiler ${{ matrix.SM_VERSION }}
+        id: setup_sp
+        uses: rumblefrog/setup-sp@master
+        with:
+          version: '1.13.x'
+          version-file: ./tf_chat_annotations.sp
+
+      - name: Create include directory
+        run: mkdir -p include
+
+      - name: Download sourcecomms.inc
+        working-directory: include
+        run: |
+          wget -q -L https://raw.githubusercontent.com/sbpp/sourcebans-pp/69ba281d769531c1df68f1397e5a6096eca63975/game/addons/sourcemod/scripting/include/sourcecomms.inc -O sourcecomms.inc
+          ls -lah
+
+      - name: Commit SHA
+        run: echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Compile plugin
+        run: |
+          echo -e "\nCompiling tf_chat_annotations.sp..."
+          spcomp -w234 -O2 -v2 -i include tf_chat_annotations.sp --warning=203
+          echo "===OUT FILES==="
+          ls
+          echo version = ${{ steps.setup_sp.outputs.plugin-version }}
+        working-directory: ${{ env.SCRIPTS_PATH }}
+
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: "[TF2] Chat Annotations (${{ env.COMMIT_SHA }})"
+          path: tf_chat_annotations.smx
