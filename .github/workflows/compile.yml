@@ -30,7 +30,7 @@ jobs:
         uses: rumblefrog/setup-sp@master
         with:
           version: '1.13.x'
-          version-file: ./discord_redux.sp
+          version-file: ./tf_chat_annotations.sp
 
       - name: Create include directory
         run: mkdir -p include
