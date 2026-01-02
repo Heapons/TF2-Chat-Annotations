@@ -57,5 +57,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: "TF2Chat Annotations (${{ env.COMMIT_SHA }})"
+          name: "[TF2] Chat Annotations (${{ env.COMMIT_SHA }})"
           path: tf_chat_annotations.smx

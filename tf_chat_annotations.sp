@@ -14,7 +14,7 @@
 
 public Plugin myinfo = 
 {
-    name = "TF2Chat Annotations",
+    name = "[TF2] Chat Annotations",
     author = "HowToPlayMeow",
     description = "Display an annotation above players' heads when they chat.",
     version = PLUGIN_VERSION,
