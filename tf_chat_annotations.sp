@@ -18,7 +18,7 @@
 public Plugin myinfo = 
 {
     name = "[TF2] Chat Annotations",
-    author = "HowToPlayMeow",
+    author = "HowToPlayMeow, Heapons",
     description = "Display an annotation above players' heads when they chat.",
     version = PLUGIN_VERSION,
     url = "https://github.com/HowToPlayMeow/TF2-Chat-Annotations"
@@ -122,28 +122,67 @@ public void OnMapEnd()
     StopAnnotation();
 }
 
-public Action Command_Settings(int client, int args)
+
+public int MenuHandler_Settings(Menu menu, MenuAction action, int client, int param2)
+{
+    switch (action)
+    {
+        case MenuAction_Select:
+        {
+            switch (param2)
+            {
+                // Toggle Visibility
+                case 0:
+                {
+                    g_bAnnEnabled[client] = !g_bAnnEnabled[client];
+
+                    // Save Cookie
+                    char value[8];
+                    IntToString(g_bAnnEnabled[client] ? 1 : 0, value, sizeof(value));
+                    SetClientCookie(client, g_hAnnCookie, value);
+                    
+                    if (g_bAnnEnabled[client])
+                    {
+                        PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "On");
+                    }
+                    else
+                    {
+                        PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "Off");
+                        HideAnnotation(client);
+                    }
+
+                    // Reopen the menu after toggling
+                    Menu_Settings(client);
+                }
+            }
+        }
+        case MenuAction_End, MenuAction_Cancel:
+        {
+            delete menu;
+        }
+    }
+    return Plugin_Continue;
+}
+
+void Menu_Settings(int client)
 {
     if (client <= 0 || !IsClientInGame(client))
-        return Plugin_Handled;
+        return;
 
-    g_bAnnEnabled[client] = !g_bAnnEnabled[client];
+    Menu menu = CreateMenu(MenuHandler_Settings);
+    menu.SetTitle("Chat Annotations Settings");
 
-    // Save Cookie
-    char value[8];
-    IntToString(g_bAnnEnabled[client] ? 1 : 0, value, sizeof(value));
-    SetClientCookie(client, g_hAnnCookie, value);
+    char toggle[64];
+    Format(toggle, sizeof(toggle), "Toggle Visibility: %t", g_bAnnEnabled[client] ? "On" : "Off");
+    menu.AddItem("toggle", toggle);
+    
+    menu.ExitButton = true;
+    menu.Display(client, MENU_TIME_FOREVER);
+}
 
-    if (g_bAnnEnabled[client])
-    {
-        PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "On");
-    }
-    else
-    {
-        PrintToChat(client, "\x01[%s]\x01 \x05%t", PLUGIN_PREFIX, "Off");
-        HideAnnotation(client);
-    }
-
+public Action Command_Settings(int client, int args)
+{
+    Menu_Settings(client);
     return Plugin_Handled;
 }
 
@@ -229,19 +268,21 @@ bool ShowAnnotationPossible(int client)
 bool ShowAnnotationAllowed(int client)
 {
     #if defined _basecomm_included
-    if (g_bBaseComm)
+    if (g_bBaseComm && BaseComm_IsClientGagged(client))
     {
-        if (BaseComm_IsClientGagged(client))
-            return false;
+        return false;
     }
     #endif
 
     #if defined _sourcecomms_included
     if (g_bSourceComms)
     {
-        int NOPE = view_as<int>(SourceComms_GetClientGagType(client));
-        if (NOPE == 1 || NOPE == 3)
-            return false;
+        int gagType = view_as<int>(SourceComms_GetClientGagType(client));
+        switch (gagType)
+        {
+            case 1, 3:
+                return false;
+        }
     }
     #endif
 
